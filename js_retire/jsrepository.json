@@ -271,6 +271,25 @@
         "info": [
           "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/"
         ]
+      },
+      {
+        "atOrAbove": "1.12.0",
+        "below": "3.5.0",
+        "cwe": [
+          "CWE-79"
+        ],
+        "severity": "medium",
+        "identifiers": {
+          "summary": "Regex in its jQuery.htmlPrefilter sometimes may introduce XSS",
+          "CVE": [
+            "CVE-2020-11022"
+          ],
+          "issue": "4642",
+          "githubID": "GHSA-gxr4-xjj5-5px2"
+        },
+        "info": [
+          "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/"
+        ]
       }
     ],
     "extractors": {
@@ -7416,6 +7435,25 @@
         ]
       },
       {
+        "atOrAbove": "1.13.0",
+        "below": "1.13.2",
+        "severity": "medium",
+        "cwe": [
+          "CWE-400"
+        ],
+        "identifiers": {
+          "summary": "### Summary\n\nAxios HTTP/2 session cleanup logic contains a state corruption bug that allows a malicious server to crash the client process through concurrent session closures. This denial-of-service vulnerability affects axios versions prior to 1.13.2 when HTTP/2 is enabled.\n\n### Details\n\nThe vulnerability exists in the `Http2Sessions.getSession()` method in `lib/adapters/http.js`. The session cleanup logic contains a control flow error when removing sessions from the sessions array.\n\n**Vulnerable Code:**\n```javascript\nwhile (i--) {\n  if (entries[i][0] === session) {\n    entries.splice(i, 1);\n    if (len === 1) {\n      delete this.sessions[authority];\n      return;\n    }\n  }\n}\n```\n\n**Root Cause:**\nAfter calling `entries.splice(i, 1)` to remove a session, the original code only returned early if `len === 1`. For arrays with multiple entries, the iteration continued after modifying the array, causing undefined behavior and potential crashes when accessing shifted array indices.\n\n**Fixed Code:**\n```javascript\nwhile (i--) {\n  if (entries[i][0] === session) {\n    if (len === 1) {\n      delete this.sessions[authority];\n    } else {\n      entries.splice(i, 1);\n    }\n    return;\n  }\n}\n```\n\nThe fix restructures the control flow to immediately return after removing a session, regardless of whether the array is being emptied or just having one element removed. This prevents continued iteration over a modified array and eliminates the state corruption vulnerability.\n\n**Affected Component:**\n- `lib/adapters/http.js` - Http2Sessions class, session cleanup in connection close handler\n\n### PoC\n\n1. Set up a malicious HTTP/2 server that accepts multiple concurrent connections from an axios client\n2. Establish multiple concurrent HTTP/2 sessions with the axios client\n3. Close all sessions simultaneously with precise timing\n4. The flawed cleanup logic attempts to iterate over and modify the sessions array concurrently\n5. This causes the client to access invalid memory locations, resulting in a process crash\n\n**Prerequisites:**\n- Client must use axios with HTTP/2 enabled\n- Client must connect to attacker-controlled HTTP/2 server\n- Multiple concurrent HTTP/2 sessions must be established\n- Server must close all sessions simultaneously with precise timing\n\n### Impact\n\n**Who is impacted:**\n- Applications using axios with HTTP/2 enabled\n- Applications connecting to untrusted or attacker-controlled HTTP/2 servers\n- Node.js applications using axios for HTTP/2 requests\n\n**Impact Details:**\n- **Denial of Service:** Malicious server can crash the axios client process by accepting and closing multiple concurrent HTTP/2 connections simultaneously\n- **Availability Impact:** Complete loss of availability for the client process through crash (though service may auto-restart)\n- **Scope:** Impact is limited to the single client process making the requests; does not escape to affect other components or systems\n- **No Confidentiality or Integrity Impact:** Vulnerability only causes process crash, no information disclosure or data modification\n\n**CVSS Score:** 5.9 (Medium)\n**CVSS Vector:** CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H\n\n**CWE Classifications:**\n- CWE-400: Uncontrolled Resource Consumption\n- CWE-662: Improper Synchronization",
+          "githubID": "GHSA-qj83-cq47-w5f8",
+          "CVE": [
+            "CVE-2026-39865"
+          ]
+        },
+        "info": [
+          "https://github.com/axios/axios/security/advisories/GHSA-qj83-cq47-w5f8",
+          "https://github.com/axios/axios/releases/tag/v1.13.2"
+        ]
+      },
+      {
         "atOrAbove": "1.0.0",
         "below": "1.13.5",
         "severity": "high",
@@ -7460,6 +7498,29 @@
           "https://github.com/axios/axios/commit/fb3befb6daac6cad26b2e54094d0f2d9e47f24df",
           "https://datatracker.ietf.org/doc/html/rfc1034#section-3.1",
           "https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2",
+          "https://github.com/axios/axios/releases/tag/v1.15.0"
+        ]
+      },
+      {
+        "atOrAbove": "0",
+        "below": "1.15.0",
+        "severity": "critical",
+        "cwe": [
+          "CWE-113",
+          "CWE-444",
+          "CWE-918"
+        ],
+        "identifiers": {
+          "summary": "# Vulnerability Disclosure: Unrestricted Cloud Metadata Exfiltration via Header Injection Chain\n\n## Summary\nThe Axios library is vulnerable to a specific \"Gadget\" attack chain that allows **Prototype Pollution** in any third-party dependency to be escalated into **Remote Code Execution (RCE)** or **Full Cloud Compromise** (via AWS IMDSv2 bypass).\n\nWhile Axios patches exist for *preventing check* pollution, the library remains vulnerable to *being used* as a gadget when pollution occurs elsewhere. This is due to a lack of HTTP Header Sanitization (CWE-113) combined with default SSRF capabilities.\n\n**Severity**: Critical (CVSS 9.9)\n**Affected Versions**: All versions (v0.x - v1.x)\n**Vulnerable Component**: `lib/adapters/http.js` (Header Processing)\n\n## Usage of \"Helper\" Vulnerabilities\nThis vulnerability is unique because it requires **Zero Direct User Input**.\nIf an attacker can pollute `Object.prototype` via *any* other library in the stack (e.g., `qs`, `minimist`, `ini`, `body-parser`), Axios will automatically pick up the polluted properties during its config merge.\n\nBecause Axios does not sanitise these merged header values for CRLF (`\\r\\n`) characters, the polluted property becomes a **Request Smuggling** payload.\n\n## Proof of Concept\n\n### 1. The Setup (Simulated Pollution)\nImagine a scenario where a known vulnerability exists in a query parser. The attacker sends a payload that sets:\n```javascript\nObject.prototype['x-amz-target'] = \"dummy\\r\\n\\r\\nPUT /latest/api/token HTTP/1.1\\r\\nHost: 169.254.169.254\\r\\nX-aws-ec2-metadata-token-ttl-seconds: 21600\\r\\n\\r\\nGET /ignore\";\n```\n\n### 2. The Gadget Trigger (Safe Code)\nThe application makes a completely safe, hardcoded request:\n```javascript\n// This looks safe to the developer\nawait axios.get('https://analytics.internal/pings'); \n```\n\n### 3. The Execution\nAxios merges the prototype property `x-amz-target` into the request headers. It then writes the header value directly to the socket without validation.\n\n**Resulting HTTP traffic:**\n```http\nGET /pings HTTP/1.1\nHost: analytics.internal\nx-amz-target: dummy\n\nPUT /latest/api/token HTTP/1.1\nHost: 169.254.169.254\nX-aws-ec2-metadata-token-ttl-seconds: 21600\n\nGET /ignore HTTP/1.1\n...\n```\n\n### 4. The Impact (IMDSv2 Bypass)\nThe \"Smuggled\" second request is a valid `PUT` request to the AWS Metadata Service. It includes the required `X-aws-ec2-metadata-token-ttl-seconds` header (which a normal SSRF cannot send).\nThe Metadata Service returns a session token, allowing the attacker to steal IAM credentials and compromise the cloud account.\n\n## Impact Analysis\n-   **Security Control Bypass**: Defeats AWS IMDSv2 (Session Tokens).\n-   **Authentication Bypass**: Can inject headers (`Cookie`, `Authorization`) to pivot into internal administrative panels.\n-   **Cache Poisoning**: Can inject `Host` headers to poison shared caches.\n\n## Recommended Fix\nValidate all header values in `lib/adapters/http.js` and `xhr.js` before passing them to the underlying request function.\n\n**Patch Suggestion:**\n```javascript\n// In lib/adapters/http.js\nutils.forEach(requestHeaders, function setRequestHeader(val, key) {\n  if (/[\\r\\n]/.test(val)) {\n    throw new Error('Security: Header value contains invalid characters');\n  }\n  // ... proceed to set header\n});\n```\n\n## References\n-   **OWASP**: CRLF Injection (CWE-113)\n\nThis report was generated as part of a security audit of the Axios library.",
+          "githubID": "GHSA-fvcv-3m26-pcqx",
+          "CVE": [
+            "CVE-2026-40175"
+          ]
+        },
+        "info": [
+          "https://github.com/axios/axios/security/advisories/GHSA-fvcv-3m26-pcqx",
+          "https://github.com/axios/axios/pull/10660",
+          "https://github.com/axios/axios/commit/363185461b90b1b78845dc8a99a1f103d9b122a1",
           "https://github.com/axios/axios/releases/tag/v1.15.0"
         ]
       }
@@ -9771,6 +9832,22 @@
         ]
       },
       {
+        "atOrAbove": "13.0.0",
+        "below": "15.5.15",
+        "severity": "high",
+        "cwe": [
+          "CWE-770"
+        ],
+        "identifiers": {
+          "summary": "A vulnerability affects certain React Server Components packages for versions 19.x and frameworks that use the affected packages, including Next.js 13.x, 14.x, 15.x, and 16.x using the App Router. The issue is tracked upstream as [CVE-2026-23869](https://github.com/facebook/react/security/advisories/GHSA-479c-33wc-g2pg). You can read more about this advisory our [this changelog](https://vercel.com/changelog/summary-of-cve-2026-23869).\n\nA specially crafted HTTP request can be sent to any App Router Server Function endpoint that, when deserialized, may trigger excessive CPU usage. This can result in denial of service in unpatched environments.",
+          "githubID": "GHSA-q4gf-8mx6-v5v3"
+        },
+        "info": [
+          "https://github.com/vercel/next.js/security/advisories/GHSA-q4gf-8mx6-v5v3",
+          "https://vercel.com/changelog/summary-of-cve-2026-23869"
+        ]
+      },
+      {
         "atOrAbove": "15.6.0-canary.0",
         "below": "15.6.0-canary.59",
         "severity": "high",
@@ -10221,6 +10298,22 @@
           "https://github.com/vercel/next.js/security/advisories/GHSA-mq59-m269-xvcx",
           "https://github.com/vercel/next.js/commit/a27a11d78e748a8c7ccfd14b7759ad2b9bf097d8",
           "https://github.com/vercel/next.js/releases/tag/v16.1.7"
+        ]
+      },
+      {
+        "atOrAbove": "16.0.0-beta.0",
+        "below": "16.2.3",
+        "severity": "high",
+        "cwe": [
+          "CWE-770"
+        ],
+        "identifiers": {
+          "summary": "A vulnerability affects certain React Server Components packages for versions 19.x and frameworks that use the affected packages, including Next.js 13.x, 14.x, 15.x, and 16.x using the App Router. The issue is tracked upstream as [CVE-2026-23869](https://github.com/facebook/react/security/advisories/GHSA-479c-33wc-g2pg). You can read more about this advisory our [this changelog](https://vercel.com/changelog/summary-of-cve-2026-23869).\n\nA specially crafted HTTP request can be sent to any App Router Server Function endpoint that, when deserialized, may trigger excessive CPU usage. This can result in denial of service in unpatched environments.",
+          "githubID": "GHSA-q4gf-8mx6-v5v3"
+        },
+        "info": [
+          "https://github.com/vercel/next.js/security/advisories/GHSA-q4gf-8mx6-v5v3",
+          "https://vercel.com/changelog/summary-of-cve-2026-23869"
         ]
       },
       {
